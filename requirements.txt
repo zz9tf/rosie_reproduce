@@ -1,0 +1,9 @@
+# SVS文件处理所需的依赖包
+openslide-python>=1.2.0
+Pillow>=9.0.0
+numpy>=1.21.0
+matplotlib>=3.5.0
+
+
+
+

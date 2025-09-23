@@ -205,3 +205,38 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project: rosie_reproduce
+# QuPath exports and measurements
+cell_extraction/qupath/extract_png/**
+cell_extraction/qupath/**/tma_cores_pngs/**
+cell_extraction/qupath/**/cell_measurements/**
+cell_extraction/qupath/**/measurements/**
+cell_extraction/qupath/**/exports/**
+
+# Large whole-slide images (do not commit raw WSIs)
+*.svs
+*.ndpi
+*.scn
+*.mrxs
+*.tif
+*.tiff
+*.bif
+
+# Generated demos/thumbnails/tiles
+data_analysis/data_demo/**
+**/*_complete_2048x2048.jpg
+
+# Datasets, caches and outputs
+cell_extraction/**/datasets/**
+cell_extraction/**/outputs/**
+cell_extraction/**/cache/**
+roise_reorganize/**/outputs/**
+roise_reorganize/**/runs/**
+roise_reorganize/**/logs/**
+
+# Common archives
+*.zip
+*.tar
+*.tar.gz
+*.7z
