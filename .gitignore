@@ -224,7 +224,7 @@ cell_extraction/qupath/**/exports/**
 *.bif
 
 # Generated demos/thumbnails/tiles
-data_analysis/data_demo/**
+data_demo/**
 **/*_complete_2048x2048.jpg
 
 # Datasets, caches and outputs
@@ -234,6 +234,39 @@ cell_extraction/**/cache/**
 roise_reorganize/**/outputs/**
 roise_reorganize/**/runs/**
 roise_reorganize/**/logs/**
+
+# ROSIE training outputs and logs
+roise/runs/**
+roise/outputs/**
+roise/logs/**
+roise/checkpoints/**
+roise/results/**
+
+# Cell detection results and StarDist outputs
+cell_detection/StarDist/**/he_results_*/
+cell_detection/StarDist/**/tiles/**
+cell_detection/StarDist/**/*_labels.tif
+cell_detection/StarDist/**/*_cell_stats.csv
+cell_detection/StarDist/**/*_report.json
+cell_detection/StarDist/**/*_visualization.png
+
+# QuPath cell detection outputs
+cell_detection/qupath/single_core_debug/**
+cell_detection/qupath/**/results/**
+
+# Zarr data files (large binary files)
+**/*.zarr
+**/*.zarr.zip
+
+# Model checkpoints and weights
+**/*.pth
+**/*.pt
+**/*.ckpt
+**/*.h5
+**/*.hdf5
+
+# Jupyter notebook checkpoints
+**/.ipynb_checkpoints/
 
 # Common archives
 *.zip
