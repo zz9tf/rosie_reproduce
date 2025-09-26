@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-优化的训练脚本 - 限制数据集大小并改进性能
+优化的训练脚本 - 直接使用分割后的数据集文件
 """
 
 import argparse
 import os
 from patch_dataset import PatchImageDataset, get_default_transforms, collate_fn
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 from model import ProteinPredictor
 
 def main():
@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--patch-size", type=int, default=128, help="patch大小")
     parser.add_argument("--use-zarr", action="store_true", default=True, help="使用zarr直接加载")
     parser.add_argument("--zarr-marker", type=str, default="HE", help="zarr marker名称")
-    parser.add_argument("--split-file", required=True, help="预生成的索引分割文件路径")
+    parser.add_argument("--splits-dir", type=str, default="./splits", help="分割数据集目录")
     
     args = parser.parse_args()
     
@@ -31,41 +31,50 @@ def main():
     print("=" * 60)
     print(f"🚀 数据加载方式: {'Zarr直接加载' if args.use_zarr else '图像文件加载'}")
     print(f"🎯 Zarr marker: {args.zarr_marker}")
+    print(f"📁 分割数据集目录: {args.splits_dir}")
     
-    # 加载分割文件
-    print(f"\n📂 加载分割文件: {args.split_file}")
-    import numpy as np
-    data = np.load(args.split_file)
-    train_indices = data['train_indices']
-    val_indices = data['val_indices']
-    test_indices = data['test_indices']
+    # 检查分割文件是否存在
+    train_file = os.path.join(args.splits_dir, "train.parquet")
+    val_file = os.path.join(args.splits_dir, "val.parquet")
+    test_file = os.path.join(args.splits_dir, "test.parquet")
     
-    print(f"📊 原始分割:")
-    print(f"   - 训练集: {len(train_indices)} 个样本")
-    print(f"   - 验证集: {len(val_indices)} 个样本")
-    print(f"   - 测试集: {len(test_indices)} 个样本")
+    if not os.path.exists(train_file):
+        raise FileNotFoundError(f"训练集文件不存在: {train_file}")
+    if not os.path.exists(val_file):
+        raise FileNotFoundError(f"验证集文件不存在: {val_file}")
     
-    # 创建完整数据集
-    print("\n📦 创建完整数据集...")
-    full_dataset = PatchImageDataset(
-        parquet_path=args.data_file,
+    print(f"\n📂 使用分割数据集:")
+    print(f"   - 训练集: {train_file}")
+    print(f"   - 验证集: {val_file}")
+    if os.path.exists(test_file):
+        print(f"   - 测试集: {test_file}")
+    
+    # 创建数据集
+    print("\n📦 创建数据集...")
+    transform_train, transform_eval = get_default_transforms()
+    
+    train_dataset = PatchImageDataset(
+        parquet_path=train_file,
         patch_size=args.patch_size,
-        transform=get_default_transforms()[0],
-        cache_images=True,
+        transform=transform_train,
+        cache_images=False,  # 训练时不缓存，节省内存
         target_biomarkers=args.target_biomarkers,
         use_zarr=args.use_zarr,
         zarr_marker=args.zarr_marker,
     )
     
-    # 应用索引分割
-    print("\n📦 应用索引分割...")
-    train_dataset = Subset(full_dataset, train_indices)
-    val_dataset = Subset(full_dataset, val_indices)
-    test_dataset = Subset(full_dataset, test_indices)
+    val_dataset = PatchImageDataset(
+        parquet_path=val_file,
+        patch_size=args.patch_size,
+        transform=transform_eval,
+        cache_images=True,  # 验证时缓存，提高速度
+        target_biomarkers=args.target_biomarkers,
+        use_zarr=args.use_zarr,
+        zarr_marker=args.zarr_marker,
+    )
     
     print(f"✅ 训练数据集大小: {len(train_dataset)}")
     print(f"✅ 验证数据集大小: {len(val_dataset)}")
-    print(f"✅ 测试数据集大小: {len(test_dataset)}")
     
     # 创建DataLoader
     print("\n🔄 创建DataLoader...")

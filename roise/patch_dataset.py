@@ -136,8 +136,8 @@ class PatchImageDataset(Dataset):
         transform: 图像变换
         target_biomarkers: 目标生物标记物列表
         cache_images: 是否缓存图像到内存
-        max_samples: 最大样本数（用于测试，None表示使用全部数据）
         row_group_size: 每次读取的行组大小
+        subset: 子集行索引列表
         use_zarr: 是否使用zarr直接加载（默认: True）
         zarr_marker: 用于加载图像的marker名称（默认: 'HE'）
     """

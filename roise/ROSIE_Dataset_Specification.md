@@ -1,155 +1,228 @@
-# ROSIE训练数据集完整规范文档
+# ROSIE 数据集规范文档
 
 ## 📋 概述
 
-ROSIE (H&E/多染色到多marker回归) 训练数据集包含三个核心组件。本版本面向你的TMA数据：八种试剂分别为 CD3、CD8、CD56、CD68、CD163、HE、MHC1、PDL1，每种都是三通道RGB普通照片。训练/推理的目标是对这8个marker进行回归（每个marker输出3个值，对应RGB通道），合计24维输出。
+ROSIE (H&E到多蛋白标记物预测) 是一个基于深度学习的组织病理学图像分析系统。本系统将H&E染色的组织图像作为输入，预测多种蛋白标记物的表达水平。
 
-## 🗂️ 数据集目录结构
+### 🎯 核心功能
+- **输入**: H&E染色的组织图像 (RGB)
+- **输出**: 多种蛋白标记物的表达预测 (CD3, CD8, CD20, CD68, CD163, MHC1, PDL1)
+- **模型**: 基于ConvNeXt-Small的回归模型
+- **数据格式**: 支持PNG图像和Zarr格式
+
+## 🗂️ 项目结构
 
 ```
-ROSIE_DATASET/
-├── data/                               # 核心数据文件夹
-│   └── cell_measurements.pqt          # 主数据表（包含全部映射/路径/坐标/标签）
-├── images/                             # 八种试剂的RGB图片（PNG/JPEG）
-│   ├── tma_tumorcenter_CD3/
-│   ├── tma_tumorcenter_CD8/
-│   ├── tma_tumorcenter_CD56/
-│   ├── tma_tumorcenter_CD68/
-│   ├── tma_tumorcenter_CD163/
-│   ├── tma_tumorcenter_HE/
-│   ├── tma_tumorcenter_MHC1/
-│   └── tma_tumorcenter_PDL1/
-├── metadata/
-│   └── dataset_splits.json             # 数据集划分（可选）
-└── runs/                              # 训练输出（自动创建）
+rosie_reproduce/
+├── roise/                              # 主项目目录
+│   ├── datalabel_generator/            # 数据生成工具
+│   │   ├── convert_to_zarr_memory.py   # PNG转Zarr脚本
+│   │   ├── zarr_dataframe_generator.py # 生成数据集标签
+│   │   └── generate_splits.py          # 数据分割脚本
+│   ├── patch_dataset.py               # 数据集加载器
+│   ├── model.py                       # 模型定义和训练器
+│   ├── train.py                       # 训练脚本
+│   ├── example_usage.sh               # 完整流程示例
+│   └── README.md                      # 项目说明
+├── data/                              # 数据目录
+│   ├── images/                        # 原始PNG图像
+│   ├── zarr_data/                     # Zarr格式数据
+│   └── splits/                        # 分割后的数据集
+└── runs/                              # 训练输出
+    ├── best_model.pth                 # 最佳模型
+    └── predictions_*.pqt              # 预测结果
 ```
 
----
+## 🔄 完整数据处理流程
 
-## 📊 1. 核心数据文件 (`data/cell_measurements.pqt`)
+### 步骤1: PNG图像转换为Zarr格式
+```bash
+python datalabel_generator/convert_to_zarr_memory.py \
+    --input-dir "path/to/png/images" \
+    --output-dir "./zarr_data" \
+    --chunk-height 512 \
+    --chunk-width 512 \
+    --chunk-channels 3 \
+    --markers HE CD3 CD8 CD20 CD68 CD163 MHC1 PDL1
+```
 
-### 文件格式
-- **格式**: Apache Parquet (.pqt)
-- **压缩**: 推荐snappy或gzip
-- **规模**: 依据样本量而定
+**参数说明:**
+- `--input-dir`: PNG图像输入目录
+- `--output-dir`: Zarr输出目录
+- `--chunk-height/width`: Zarr分块大小
+- `--markers`: 要转换的生物标记物列表
 
-### 数据结构
+### 步骤2: 生成数据集标签文件
+```bash
+python datalabel_generator/zarr_dataframe_generator.py \
+    --zarr-dir "./zarr_data" \
+    --output "./data/image_labels.parquet" \
+    --stripe-size 8 \
+    --kernel-size 8
+```
 
-#### 必需字段（定位/选择）
-| 字段名 | 数据类型 | 描述 | 示例 |
-|--------|----------|------|------|
-| `HE_COVERSLIP_ID` | string | 切片/芯片ID，用于筛选/划分 | "HE_block9" |
-| `X` | int64 | 细胞中心X坐标（像素） | 1500 |
-| `Y` | int64 | 细胞中心Y坐标（像素） | 2000 |
-| `core_block` | string/int | TMA block编号（可选） | 9 |
-| `core_x`, `core_y` | int | TMA网格坐标（可选） | 6, 9 |
-| `patient_id` | string | 病人ID（可选） | "patient510" |
+**参数说明:**
+- `--zarr-dir`: Zarr数据目录
+- `--output`: 输出标签文件路径
+- `--stripe-size`: 条带大小
+- `--kernel-size`: 核大小
 
-#### 路径/文件字段（八种试剂的RGB图）
-| 字段名 | 数据类型 | 描述 | 示例 |
-|--------|----------|------|------|
-| `path_CD3` | string | CD3图片文件相对/绝对路径 | images/tma_tumorcenter_CD3/TumorCenter_CD3_block9_x6_y9_patient510.png |
-| `path_CD8` | string | CD8图片路径 | images/tma_tumorcenter_CD8/... |
-| `path_CD56` | string | CD56图片路径 | ... |
-| `path_CD68` | string | CD68图片路径 | ... |
-| `path_CD163` | string | CD163图片路径 | ... |
-| `path_HE` | string | HE图片路径 | images/tma_tumorcenter_HE/... |
-| `path_MHC1` | string | MHC1图片路径 | ... |
-| `path_PDL1` | string | PDL1图片路径 | ... |
+### 步骤3: 数据分割
+```bash
+python datalabel_generator/generate_splits.py \
+    --data-file "./data/image_labels.parquet" \
+    --split-ratios 0.8 0.1 0.1 \
+    --split-seed 42 \
+    --max-samples 100000 \
+    --shuffle \
+    --output-dir "./splits" \
+    --output-format parquet
+```
 
-说明：若某试剂图片缺失，路径字段置为NA。
+**参数说明:**
+- `--data-file`: 数据集标签文件
+- `--split-ratios`: 训练/验证/测试集比例
+- `--max-samples`: 最大样本数限制
+- `--shuffle`: 是否打乱数据
+- `--output-dir`: 分割输出目录
 
-#### 回归目标（标签）
-每个marker为三通道RGB，建议在数据表中存储为下列24列中的任意一种表示（选一种即可，另一种可运行时转换）：
+### 步骤4: 模型训练
+```bash
+python train.py \
+    --root "." \
+    --target-biomarkers CD3 CD8 CD20 CD68 CD163 MHC1 PDL1 \
+    --batch-size 32 \
+    --lr 1e-4 \
+    --eval-interval 1000 \
+    --patience 5000 \
+    --num-workers 4 \
+    --patch-size 128 \
+    --use-zarr \
+    --zarr-marker HE \
+    --splits-dir "./splits"
+```
 
-- 展开列（推荐便于直接训练）
-  - `CD3_R`, `CD3_G`, `CD3_B`
-  - `CD8_R`, `CD8_G`, `CD8_B`
-  - `CD56_R`, `CD56_G`, `CD56_B`
-  - `CD68_R`, `CD68_G`, `CD68_B`
-  - `CD163_R`, `CD163_G`, `CD163_B`
-  - `HE_R`, `HE_G`, `HE_B`
-  - `MHC1_R`, `MHC1_G`, `MHC1_B`
-  - `PDL1_R`, `PDL1_G`, `PDL1_B`
+## 📊 数据格式规范
 
-- 或JSON列（更紧凑但需解析）
-  - `targets_json`（示例：{"CD3":[r,g,b], ...}），缺失marker写入null或省略该键
+### 输入图像格式
+- **格式**: PNG/JPEG (RGB三通道)
+- **数据类型**: uint8 (0-255)
+- **尺寸**: 支持任意尺寸，训练时自动裁剪为patch
+- **标记物**: HE, CD3, CD8, CD20, CD68, CD163, MHC1, PDL1
 
-缺失值一律用NA（或JSON中的null）标记，训练时用mask忽略。
-
-
-### 示例数据行
+### 数据集标签文件 (Parquet格式)
 ```python
 {
-    "CODEX_ACQUISITION_ID": "Stanford_PGC_001",
-    "HE_COVERSLIP_ID": "HE_slide_001", 
-    "X": 15420,
-    "Y": 23680,
-    "DAPI": 2.34,
-    "CD45": 0.12,
-    "CD68": 0.0,
-    "PanCK": 4.56,
-    "Ki67": 0.03,
-    # ... 其他45个标记物
+    "image_path": "path/to/image.png",      # 图像路径
+    "image_id": "unique_id",                # 图像ID
+    "X": 1500,                             # X坐标
+    "Y": 2000,                             # Y坐标
+    "CD3": 0.5,                            # CD3表达值
+    "CD8": 0.3,                            # CD8表达值
+    "CD20": 0.7,                           # CD20表达值
+    "CD68": 0.2,                           # CD68表达值
+    "CD163": 0.4,                          # CD163表达值
+    "MHC1": 0.6,                           # MHC1表达值
+    "PDL1": 0.1                            # PDL1表达值
 }
 ```
 
----
+### 分割后数据集
+- `train.parquet`: 训练集数据
+- `val.parquet`: 验证集数据
+- `test.parquet`: 测试集数据
+- `split_metadata.txt`: 分割元数据信息
 
-## 🖼️ 2. 图像文件夹（八种试剂，RGB）
+## 🤖 模型架构
 
-### 目录结构
-```
-images/
-├── tma_tumorcenter_CD3/
-├── tma_tumorcenter_CD8/
-├── tma_tumorcenter_CD56/
-├── tma_tumorcenter_CD68/
-├── tma_tumorcenter_CD163/
-├── tma_tumorcenter_HE/
-├── tma_tumorcenter_MHC1/
-└── tma_tumorcenter_PDL1/
-```
+### 网络结构
+- **骨干网络**: ConvNeXt-Small (预训练于ImageNet)
+- **输出层**: 线性层，输出维度为标记物数量
+- **损失函数**: Masked MSE Loss
+- **优化器**: Adam
+- **学习率调度**: ReduceLROnPlateau
 
-### 文件格式规范
+### 训练配置
+- **批次大小**: 32 (可调整)
+- **学习率**: 1e-4
+- **验证间隔**: 1000步
+- **早停耐心值**: 5000步
+- **Patch大小**: 128x128像素
 
-#### 图像格式要求
-- **格式**: PNG/JPEG（RGB三通道）
-- **数据类型**: uint8 (0-255)
-- **命名**: 可沿用现有命名（如 TumorCenter_CD3_block9_x6_y9_patient510.png）
-- **尺寸**: 原图尺寸保留；训练时由DataLoader按需裁剪/缩放
+## 🚀 快速开始
 
-#### 图像质量标准
-- **分辨率**: ≥20000×20000像素 (40x扫描)
-- **像素尺寸**: 0.25μm/pixel (推荐)
-- **染色质量**: 均匀H&E染色，无模糊
-- **文件大小**: 单个Zarr文件100MB-2GB
-
-#### 命名规范
-- **目录名**: HE_REGION_UUID (36字符UUID)
-- **文件名**: 固定为 `image.ome.zarr`
-- **通道目录**: `0/`, `1/`, `2/` (R, G, B)
-
-备注：若后续需要高效随机访问，可选将PNG批量转为Zarr，但本规范不强制。
-
-### dataset_splits.json 结构
-
-#### 文件格式
-```json
-{
-  "train": [
-    ...
-  ],
-  "val": [
-    ...
-  ],
-  "test": [
-    ...
-  ]
-}
+### 一键运行完整流程
+```bash
+# 修改example_usage.sh中的路径变量
+bash example_usage.sh
 ```
 
-#### 划分建议
-- 训练集: 80%
-- 验证集: 10%  
-- 测试集: 10%
+### 分步执行
+```bash
+# 1. 转换数据
+python datalabel_generator/convert_to_zarr_memory.py --input-dir your_images --output-dir zarr_data
+
+# 2. 生成标签
+python datalabel_generator/zarr_dataframe_generator.py --zarr-dir zarr_data --output labels.parquet
+
+# 3. 分割数据
+python datalabel_generator/generate_splits.py --data-file labels.parquet --output-dir splits
+
+# 4. 训练模型
+python train.py --splits-dir splits --use-zarr
+```
+
+## 📈 性能优化
+
+### 数据加载优化
+- **Zarr格式**: 比PNG加载更快，支持随机访问
+- **多进程加载**: 使用多个worker进程并行加载数据
+- **内存映射**: 减少内存占用
+- **数据分割**: 避免重复加载大文件
+
+### 训练优化
+- **混合精度**: 支持FP16训练
+- **梯度累积**: 支持大批次训练
+- **早停机制**: 防止过拟合
+- **学习率调度**: 自适应调整学习率
+
+## 🔧 环境要求
+
+### Python依赖
+```
+torch>=1.12.0
+torchvision>=0.13.0
+pandas>=1.4.0
+numpy>=1.21.0
+zarr>=2.12.0
+tqdm>=4.64.0
+PIL>=9.0.0
+opencv-python>=4.6.0
+```
+
+### 硬件要求
+- **GPU**: 推荐NVIDIA GPU (8GB+ VRAM)
+- **内存**: 16GB+ RAM
+- **存储**: SSD推荐，支持快速I/O
+
+## 📝 注意事项
+
+1. **数据路径**: 确保所有路径正确设置
+2. **内存管理**: 大数据集建议使用Zarr格式
+3. **标记物顺序**: 确保训练和推理使用相同的标记物顺序
+4. **数据质量**: 确保输入图像质量良好，无损坏
+5. **版本兼容**: 确保PyTorch版本兼容
+
+## 🐛 常见问题
+
+### Q: 内存不足怎么办？
+A: 减少batch_size，使用Zarr格式，或减少max_samples参数
+
+### Q: 训练速度慢？
+A: 使用GPU训练，增加num_workers，使用Zarr格式
+
+### Q: 模型不收敛？
+A: 检查学习率，数据质量，标记物范围
+
+### Q: 数据加载错误？
+A: 检查文件路径，图像格式，Zarr文件完整性
